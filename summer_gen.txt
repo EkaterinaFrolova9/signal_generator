@@ -1,0 +1,492 @@
+#!/usr/bin/env python
+# -*- coding: UTF-8 -*-
+
+import sys
+import time
+import math
+import random
+sys.path.append('/lib/python3/dist-packages')
+import dts
+from dts import Value, Client
+
+port = 49000
+channel_id = 0
+
+def send_signal(client, value, value_type, min_idx, max_idx):
+    for i in range(min_idx, max_idx + 1):
+        now = time.time()
+        signal = {
+            'ana': Value.make_ana,
+            'int': Value.make_int,
+            'bin': Value.make_bin
+        }[value_type](
+            idx=i,
+            quality='good',
+            sec=int(now),
+            msec=int((now % 1.0) * 1000),
+            result=value
+        )
+        
+        if client.put(signal, channel_id) != 0:
+            print('Ошибка при отправке сигнала')
+
+
+def generate_analog_signal_int(client):
+    while True:
+        print("\\nВыберите форму аналогового сигнала:")
+        print("1 - Синусоидальный")
+        print("2 - Пилообразный")
+        print("3 - Импульсный")
+        print("4 - Импульсный с NaN/Inf")
+        print("5 - Рандомный в интервале")
+        print("6 - Экспоненциальный")
+        print("0 - Назад")
+        form = input("Ваш выбор: ")
+        if form == '0':
+            return
+
+        if form == '1':  # Синус
+            period = float(input("Период: "))
+            amp = float(input("Амплитуда: "))
+            delta_t = float(input("Шаг по времени: "))
+            periods = int(input("Кол-во периодов: "))
+            center = float(input("Центр сигнала: "))
+            t = 0
+            while t < period * periods:
+                angle = 2 * math.pi * t / period
+                value = center + amp * math.sin(angle)
+                send_signal(client, value, 'ana', min_idx, max_idx)
+                time.sleep(delta_t)
+                t += delta_t
+
+        elif form == '2':  # Пила
+            min_v = float(input("Минимум: "))
+            max_v = float(input("Максимум: "))
+            step = float(input("Шаг пилы: "))
+            delta_t = float(input("Шаг по времени: "))
+            val = min_v
+            while True:
+                send_signal(client, val, 'ana', min_idx, max_idx)
+                val += step
+                if val > max_v:
+                    val = min_v
+                time.sleep(delta_t)
+
+        elif form == '3':  # Импульс
+            low = float(input("Нижний уровень: "))
+            high = float(input("Верхний уровень: "))
+            period = float(input("Период: "))
+            duty = float(input("Скважность (%): "))
+            high_time = period * (duty / 100)
+            low_time = period - high_time
+            while True:
+                send_signal(client, high, 'ana', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, low, 'ana', min_idx, max_idx)
+                time.sleep(low_time)
+
+        elif form == '4':  # Импульс с NaN/Inf
+            low = float(input("Нижний уровень: "))
+            high = float(input("Верхний уровень: "))
+            nan_pct = float(input("Процент NaN: "))
+            inf_pct = float(input("Процент +inf: "))
+            ninf_pct = float(input("Процент -inf: "))
+            period = float(input("Период: "))
+            duty = float(input("Скважность (%): "))
+            high_time = period * (duty / 100)
+            low_time = period - high_time
+            values = [low, high, float('nan'), float('inf'), float('-inf')]
+            weights = [100 - nan_pct - inf_pct - ninf_pct, 0, nan_pct, inf_pct, ninf_pct]
+            while True:
+                send_signal(client, random.choices(values, weights=weights)[0], 'ana', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, random.choices(values, weights=weights)[0], 'ana', min_idx, max_idx)
+                time.sleep(low_time)
+
+        elif form == '5':  # Рандом
+            min_v = float(input("Минимум: "))
+            max_v = float(input("Максимум: "))
+            delta_t = float(input("Шаг по времени: "))
+            while True:
+                send_signal(client, random.uniform(min_v, max_v), 'ana', min_idx, max_idx)
+                time.sleep(delta_t)
+
+        elif form == '6':  # Экспонента
+            A = float(input("Начальное значение: "))
+            k = float(input("Коэффициент экспоненты: "))
+            delta_t = float(input("Шаг по времени: "))
+            t = 0
+            while True:
+                send_signal(client, A * math.exp(k * t), 'ana', min_idx, max_idx)
+                time.sleep(delta_t)
+                t += delta_t
+
+def generate_integer_signal_int(client):
+    while True:
+        print("\\nФормы целочисленного сигнала:")
+        print("1 - Пилообразный")
+        print("2 - Импульсный")
+        print("3 - Импульсный с NaN/Inf")
+        print("4 - Рандомный в интервале")
+        print("0 - Назад")
+        form = input("Выбор: ")
+        if form == '0':
+            return
+
+        if form == '1':
+            min_v = int(input("Минимум: "))
+            max_v = int(input("Максимум: "))
+            step = int(input("Шаг: "))
+            delta_t = float(input("Шаг по времени: "))
+            val = min_v
+            while True:
+                send_signal(client, val, 'int', min_idx, max_idx)
+                val += step
+                if val > max_v:
+                    val = min_v
+                time.sleep(delta_t)
+
+        elif form == '2':
+            low = int(input("Низкий уровень: "))
+            high = int(input("Высокий уровень: "))
+            period = float(input("Период: "))
+            duty = float(input("Скважность (%): "))
+            high_time = period * (duty / 100)
+            low_time = period - high_time
+            while True:
+                send_signal(client, high, 'int', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, low, 'int', min_idx, max_idx)
+                time.sleep(low_time)
+
+        elif form == '3':
+            low = int(input("Низкий уровень: "))
+            high = int(input("Высокий уровень: "))
+            nan_pct = float(input("Процент NaN: "))
+            inf_pct = float(input("Процент +inf: "))
+            ninf_pct = float(input("Процент -inf: "))
+            period = float(input("Период: "))
+            duty = float(input("Скважность (%): "))
+            high_time = period * (duty / 100)
+            low_time = period - high_time
+            values = [low, high, float('nan'), float('inf'), float('-inf')]
+            weights = [100 - nan_pct - inf_pct - ninf_pct, 0, nan_pct, inf_pct, ninf_pct]
+            while True:
+                send_signal(client, random.choices(values, weights=weights)[0], 'int', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, random.choices(values, weights=weights)[0], 'int', min_idx, max_idx)
+                time.sleep(low_time)
+
+        elif form == '4':  # Рандом
+            min_v = int(input("Минимум: "))
+            max_v = int(input("Максимум: "))
+            delta_t = float(input("Шаг по времени: "))
+            while True:
+                send_signal(client, int(random.uniform(min_v, max_v)), 'int', min_idx, max_idx)
+                time.sleep(delta_t)
+
+def generate_binary_signal_int(client):
+    while True:
+        print("\\nФормы бинарного сигнала:")
+        print("1 - Импульсный")
+        print("2 - Импульсный с NaN/Inf")
+        print("0 - Назад")
+        form = input("Выбор: ")
+        if form == '0':
+            return
+
+        if form == '1':
+            high = 1
+            period = float(input("Период: "))
+            duty = float(input("Скважность (%): "))
+            high_time = period * (duty / 100)
+            low_time = period - high_time
+            while True:
+                send_signal(client, high, 'bin', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, 0, 'bin', min_idx, max_idx)
+                time.sleep(low_time)
+
+        elif form == '2':
+            high = 1
+            nan_pct = float(input("Процент NaN: "))
+            inf_pct = float(input("Процент +inf: "))
+            ninf_pct = float(input("Процент -inf: "))
+            period = float(input("Период: "))
+            duty = float(input("Скважность (%): "))
+            high_time = period * (duty / 100)
+            low_time = period - high_time
+            values = [0, high, float('nan'), float('inf'), float('-inf')]
+            weights = [100 - nan_pct - inf_pct - ninf_pct, 0, nan_pct, inf_pct, ninf_pct]
+            while True:
+                send_signal(client, random.choices(values, weights=weights)[0], 'bin', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, 0, 'bin', min_idx, max_idx)
+                time.sleep(low_time)
+
+def main_int():
+
+    while True:
+        print("\\nГЛАВНОЕ МЕНЮ:")
+        print("1 - Аналоговый сигнал")
+        print("2 - Бинарный сигнал")
+        print("3 - Целочисленный сигнал")
+        print("0 - Выход")
+        choice = input("Выбор: ")
+
+        if choice == '1':
+            generate_analog_signal_int(client)
+        elif choice == '2':
+            generate_binary_signal_int(client)
+        elif choice == '3':
+            generate_integer_signal_int(client)
+        elif choice == '0':
+            print("Завершение.")
+            break
+        else:
+            print("Неверный ввод.")
+
+
+def generate_analog_signal(client, vvod, min_idx, max_idx):
+    if vvod[1] == 'sin':  # Синус
+        period = float(vvod[2])
+        amp = float(vvod[3])
+        delta_t = float(vvod[4])
+        center = float(vvod[5])
+        t = 0
+        try:
+            while True:
+                angle = 2 * math.pi * t / period
+                value = center + amp * math.sin(angle)
+                send_signal(client, value, 'ana', min_idx, max_idx)
+                time.sleep(delta_t)
+                t += delta_t
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'pila':  # Пила
+        min_v = float(vvod[2])
+        max_v = float(vvod[3])
+        step = float(vvod[4])
+        delta_t = float(vvod[5])
+        value = min_v
+        try:
+            while True:
+                send_signal(client, value, 'ana', min_idx, max_idx)
+                value += step
+                if value > max_v:
+                    value = min_v
+                time.sleep(delta_t)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'imp':  # Импульс
+        low = float(vvod[2])
+        high = float(vvod[3])
+        period = float(vvod[4])
+        duty = float(vvod[5])
+        high_time = period * (duty / 100)
+        low_time = period - high_time
+        try:
+            while True:
+                send_signal(client, high, 'ana', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, low, 'ana', min_idx, max_idx)
+                time.sleep(low_time)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'impinf':  # Импульс с NaN/Inf
+        low = float(vvod[2])
+        high = float(vvod[3])
+        nan_pct = float(vvod[4])
+        inf_pct = float(vvod[5])
+        ninf_pct = float(vvod[6])
+        period = float(vvod[7])
+        duty = float(vvod[8])
+        high_time = period * (duty / 100)
+        low_time = period - high_time
+        values = [low, high, float('nan'), float('inf'), float('-inf')]
+        weights = [100 - nan_pct - inf_pct - ninf_pct, 0, nan_pct, inf_pct, ninf_pct]
+        try:
+            while True:
+                send_signal(client, random.choices(values, weights=weights)[0], 'ana', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, random.choices(values, weights=weights)[0], 'ana', min_idx, max_idx)
+                time.sleep(low_time)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'rand':  # Рандом
+        min_v = float(vvod[2])
+        max_v = float(vvod[3])
+        delta_t = float(vvod[4])
+        try:
+            while True:
+                send_signal(client, random.uniform(min_v, max_v), 'ana', min_idx, max_idx)
+                time.sleep(delta_t)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'exp':  # Экспонента
+        min_val = float(vvod[2])
+        max_val = float(vvod[3])
+        delta_t = float(vvod[4])
+        duration = float(vvod[5])
+        t = 0
+        try:
+            while True:
+                normalized = (math.exp(t) - 1) / (math.exp(duration) - 1)
+                value = int(min_val + (max_val - min_val) * normalized)
+                send_signal(client, value, 'int', min_idx, max_idx)
+                time.sleep(delta_t)
+                t += delta_t
+                if t >= duration:
+                    t = 0
+
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    else:
+        print('Неверное значение формы сигнала')
+
+def generate_integer_signal(client, vvod, min_idx, max_idx):
+    if vvod[1] == 'pila':
+        min_v = int(vvod[2])
+        max_v = int(vvod[3])
+        step = int(vvod[4])
+        delta_t = float(vvod[5])
+        val = min_v
+        try:
+            while True:
+                send_signal(client, val, 'int', min_idx, max_idx)
+                val += step
+                if val > max_v:
+                    val = min_v
+                time.sleep(delta_t)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'imp':
+        low = int(vvod[2])
+        high = int(vvod[3])
+        period = float(vvod[4])
+        duty = float(vvod[5])
+        high_time = period * (duty / 100)
+        low_time = period - high_time
+        try:
+            while True:
+                send_signal(client, high, 'int', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, low, 'int', min_idx, max_idx)
+                time.sleep(low_time)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'impinf':
+        low = int(vvod[2])
+        high = int(vvod[3])
+        nan_pct = float(vvod[4])
+        inf_pct = float(vvod[5])
+        ninf_pct = float(vvod[6])
+        period = float(vvod[7])
+        duty = float(vvod[8])
+        high_time = period * (duty / 100)
+        low_time = period - high_time
+        values = [low, high, float('nan'), float('inf'), float('-inf')]
+        weights = [100 - nan_pct - inf_pct - ninf_pct, 0, nan_pct, inf_pct, ninf_pct]
+        try:
+            while True:
+                send_signal(client, random.choices(values, weights=weights)[0], 'int', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, random.choices(values, weights=weights)[0], 'int', min_idx, max_idx)
+                time.sleep(low_time)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'rand':  # Рандом
+        min_v = int(vvod[2])
+        max_v = int(vvod[3])
+        delta_t = float(vvod[4])
+        try:
+            while True:
+                send_signal(client, int(random.uniform(min_v, max_v)), 'int', min_idx, max_idx)
+                time.sleep(delta_t)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    else:
+	      print('Неверное значение формы сигнала')
+
+def generate_binary_signal(client, vvod, min_idx, max_idx):
+
+    if vvod[1] == 'imp':
+        high = 1
+        period = float(vvod[2])
+        duty = float(vvod[3])
+        high_time = period * (duty / 100)
+        low_time = period - high_time
+        try:
+            while True:
+                send_signal(client, high, 'bin', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, 0, 'bin', min_idx, max_idx)
+                time.sleep(low_time)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    elif vvod[1] == 'impinf':
+        high = 1
+        nan_pct = float(vvod[2])
+        inf_pct = float(vvod[3])
+        ninf_pct = float(vvod[4])
+        period = float(vvod[5])
+        duty = float(vvod[6])
+        high_time = period * (duty / 100)
+        low_time = period - high_time
+        values = [0, high, float('nan'), float('inf'), float('-inf')]
+        weights = [100 - nan_pct - inf_pct - ninf_pct, 0, nan_pct, inf_pct, ninf_pct]
+        try:
+            while True:
+                send_signal(client, random.choices(values, weights=weights)[0], 'bin', min_idx, max_idx)
+                time.sleep(high_time)
+                send_signal(client, 0, 'bin', min_idx, max_idx)
+                time.sleep(low_time)
+        except KeyboardInterrupt:
+            print("\nГенерация остановлена")
+
+    else:
+	      print('Неверное значение формы сигнала')
+
+def main():
+    client = Client(port)
+    if client.state:
+        print(f"Ошибка подключения: {client.error_str}")
+        return
+    try:
+        min_idx = int(sys.argv[1])
+        max_idx = int(sys.argv[2])
+        if min_idx < 0 or max_idx < 0 or min_idx > max_idx:
+            raise ValueError
+    except ValueError:
+        print("Ошибка: индексы должны быть неотрицательными целыми числами, min_idx <= max_idx")
+        sys.exit(1)
+
+    vvod = sys.argv[3:]
+
+    if vvod[0] == 'ana':
+        generate_analog_signal(client, vvod, min_idx, max_idx)
+    elif vvod[0] == 'bin':
+        generate_binary_signal(client, vvod, min_idx, max_idx)
+    elif vvod[0] == 'int':
+        generate_integer_signal(client, vvod, min_idx, max_idx)
+    elif vvod[0] == 'menu':
+        main_int()
+    else:
+        print("Неверный ввод.")
+
+if __name__ == "__main__":
+    main()
+
+
+
